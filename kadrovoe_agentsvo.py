@@ -1,307 +1,607 @@
-import sys  
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QPushButton, QStackedWidget, QWidget, QTableWidget, QTableWidgetItem, QLabel, QFormLayout, QLineEdit, QDateEdit, QComboBox, QDialog, QFileDialog  
-from PyQt5.QtCore import QDate  
+import sys
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QTableWidget,   
+                             QTableWidgetItem, QPushButton,   
+                             QMessageBox, QDialog, QFormLayout,   
+                             QComboBox, QLineEdit, QDateEdit, QMainWindow, QApplication, QTabWidget)  
+from PyQt5.QtGui import QIntValidator, QRegularExpressionValidator  
+from PyQt5.QtCore import QRegularExpression, QDate, Qt
+import psycopg2
+    
 
-class MainWindow(QMainWindow):  
+class MainApp(QMainWindow):  
     def __init__(self):  
         super().__init__()  
+        self.setWindowTitle("HR App")  
+        self.setGeometry(100, 100, 800, 600)  
 
-        self.setWindowTitle('HR Application')  # Установка заголовка окна приложения  
-        self.setGeometry(0, 0, 1920, 1080)  # Установка размеров и положения окна  
+        self.central_widget = QWidget(self)  
+        self.setCentralWidget(self.central_widget)  
 
-        # Создание кнопок  
-        self.candidates_button = QPushButton('Кандидаты')  
-        self.employers_button = QPushButton('Работодатели')  # Кнопка для открытия таблиц
-        self.vacancies_button = QPushButton('Вакансии')   
-        self.add_candidate_button = QPushButton('Добавить Кандидата')  
-        self.add_employer_button = QPushButton('Добавить Работодателя')  # Кнопки для добавления записей  
-        self.add_vacancy_button = QPushButton('Добавить Вакансию')  
-        self.report_button = QPushButton('Отчет')  
+        self.layout = QVBoxLayout(self.central_widget)  
 
-        # Установка стиля для кнопок  
-        button_style = "height: 50px; width: 200px; font-size: 16px;"  
-        self.candidates_button.setStyleSheet(button_style)  
-        self.employers_button.setStyleSheet(button_style)  
-        self.vacancies_button.setStyleSheet(button_style)  # Применение стиля к кнопнопкам 
-        self.add_candidate_button.setStyleSheet(button_style)  
-        self.add_employer_button.setStyleSheet(button_style)  
-        self.add_vacancy_button.setStyleSheet(button_style)  
-        self.report_button.setStyleSheet(button_style)  
+        # Create tabs  
+        self.tabs = QTabWidget(self)  
+        self.layout.addWidget(self.tabs)  
 
-        # Создание горизонтального макета для кнопок  
-        button_layout = QHBoxLayout()  
-        button_layout.addWidget(self.candidates_button)  
-        button_layout.addWidget(self.employers_button)  
-        button_layout.addWidget(self.vacancies_button)  # Добавление кнопки для вакансий  
-        button_layout.addWidget(self.add_candidate_button)  
-        button_layout.addWidget(self.add_employer_button)  # Кнопка добавления работодателя  
-        button_layout.addWidget(self.add_vacancy_button)  # Кнопка для добавления вакансии  
-        button_layout.addWidget(self.report_button)  
+        # Create tab instances  
+        self.candidates_tab = CandidateTab(self)  
+        self.employers_tab = EmployerTab(self)  
+        self.vacancies_tab = VacancyTab(self)  
 
-        # Создание виджета с несколькими страницами для разных представлений  
-        self.stacked_widget = QStackedWidget()  
-        self.table_widget_candidates = QTableWidget()  # Таблица кандидатов  
-        self.table_widget_employers = QTableWidget()  # Таблица работодателей  
-        self.table_widget_vacancies = QTableWidget()  # Таблица вакансий  
+        # Add tabs to the interface  
+        self.tabs.addTab(self.candidates_tab, "Кандидаты")  
+        self.tabs.addTab(self.employers_tab, "Работодатели")  
+        self.tabs.addTab(self.vacancies_tab, "Вакансии")  
 
-        self.stacked_widget.addWidget(self.table_widget_candidates)  
-        self.stacked_widget.addWidget(self.table_widget_employers)  
-        self.stacked_widget.addWidget(self.table_widget_vacancies)  # Добавление таблицы вакансий  
+        self.setMinimumSize(800, 600)  
 
-        # Настройка основного макета  
-        layout = QVBoxLayout()  
-        layout.addLayout(button_layout)  # Добавление макета кнопок  
-        layout.addWidget(self.stacked_widget)  # Добавление виджета с несколькими страницами  
-
-        # Установка центрального виджета  
-        central_widget = QWidget()  
-        central_widget.setLayout(layout)  
-        self.setCentralWidget(central_widget)  
-
-        # Подключение кнопок к их функциям  
-        self.candidates_button.clicked.connect(self.show_candidates)  
-        self.employers_button.clicked.connect(self.show_employers)  
-        self.vacancies_button.clicked.connect(self.show_vacancies)  # Подключение кнопки для отображения вакансий  
-        self.add_candidate_button.clicked.connect(self.open_add_candidate_dialog)  
-        self.add_employer_button.clicked.connect(self.open_add_employer_dialog)  # Подключение к функции добавления работодателя  
-        self.add_vacancy_button.clicked.connect(self.open_add_vacancy_dialog)  # Подключение к функции добавления вакансии  
-
-        # Инициализация таблиц  
-        self.init_candidate_table()  
-        self.init_employer_table()  
-        self.init_vacancy_table()  
-
-    def init_candidate_table(self):  
-        self.table_widget_candidates.setColumnCount(11)  # Установка количества столбцов в таблице кандидатов  
-        self.table_widget_candidates.setHorizontalHeaderLabels([  
-            'ID', 'ФИО', 'Дата рождения', 'Номер телефона', 'Email',   
-            'Резюме', 'Опыт работы', 'Образование', 'Навыки', 'Статус', 'Дата создания'  
-        ])  # Установка заголовков столбцов  
-        self.table_widget_candidates.setRowCount(0)  # Установка начального пустого состояния таблицы  
-
-    def init_employer_table(self):  
-        self.table_widget_employers.setColumnCount(5)  # Установка количества столбцов в таблице работодателей  
-        self.table_widget_employers.setHorizontalHeaderLabels([  
-            'ID', 'Название', 'Контактные данные', 'Описание', 'Дата создания'  
-        ])  # Установка заголовков столбцов  
-        self.table_widget_employers.setRowCount(0)  # Установка начального пустого состояния таблицы  
-
-    def init_vacancy_table(self):  
-        self.table_widget_vacancies.setColumnCount(9)  # Установка количества столбцов в таблице вакансий  
-        self.table_widget_vacancies.setHorizontalHeaderLabels([  
-            'ID', 'Название должности', 'Описание', 'Требования', 'Минимальный опыт',  
-            'Работодатель ID', 'Дата открытия', 'Дата закрытия', 'Статус',   
-            'Дата создания'   
-        ])  # Установка заголовков столбцов  
-        self.table_widget_vacancies.setRowCount(0)  # Установка начального пустого состояния таблицы  
-
-    def show_candidates(self):  
-        self.stacked_widget.setCurrentIndex(0)  # Показать таблицу кандидатов  
-
-    def show_employers(self):  
-        self.stacked_widget.setCurrentIndex(1)  # Показать таблицу работодателей  
-
-    def show_vacancies(self):  
-        self.stacked_widget.setCurrentIndex(2)  # Показать таблицу вакансий  
-
-    def open_add_candidate_dialog(self):  
-        dialog = AddCandidateDialog(self)  # Открытие диалога добавления кандидата  
-        dialog.exec_()  
-
-    def open_add_employer_dialog(self):  
-        dialog = AddEmployerDialog(self)  # Открытие диалога добавления работодателя  
-        dialog.exec_()  
-
-    def open_add_vacancy_dialog(self):  
-        dialog = AddVacancyDialog(self)  # Открытие диалога добавления вакансии  
-        dialog.exec_()  
-
-    def add_candidate(self, name, phone, dob, email, resume, experience, education, skills, status):  
-        row_position = self.table_widget_candidates.rowCount()  # Получение текущего количества строк в таблице  
-        self.table_widget_candidates.insertRow(row_position)  # Вставка новой строки в таблицу  
-        self.table_widget_candidates.setItem(row_position, 0, QTableWidgetItem(str(row_position + 1)))  # Установка ID  
-        self.table_widget_candidates.setItem(row_position, 1, QTableWidgetItem(name))  # Установка значения ФИО  
-        self.table_widget_candidates.setItem(row_position, 2, QTableWidgetItem(dob))  # Установка даты рождения  
-        self.table_widget_candidates.setItem(row_position, 3, QTableWidgetItem(phone))  # Установка номера телефона  
-        self.table_widget_candidates.setItem(row_position, 4, QTableWidgetItem(email))  # Установка email  
-        self.table_widget_candidates.setItem(row_position, 5, QTableWidgetItem(resume))  # Установка резюме  
-        self.table_widget_candidates.setItem(row_position, 6, QTableWidgetItem(experience))  # Установка опыта работы  
-        self.table_widget_candidates.setItem(row_position, 7, QTableWidgetItem(education))  # Установка образования  
-        self.table_widget_candidates.setItem(row_position, 8, QTableWidgetItem(skills))  # Установка навыков  
-        self.table_widget_candidates.setItem(row_position, 9, QTableWidgetItem(status))  # Установка статуса  
-
-# Здесь вы также должны создать классы AddEmployerDialog и AddVacancyDialog аналогично AddCandidateDialog  
-
-class AddCandidateDialog(QDialog):  
-    def __init__(self, parent=None):  
+class CandidateTab(QWidget):  
+    def __init__(self, parent):  
         super().__init__(parent)  
-        self.setWindowTitle('Добавить Кандидата')  # Установка заголовка диалогового окна  
+        self.layout = QVBoxLayout(self)  
 
-        # Создание макета формы  
-        layout = QFormLayout()  
+        self.table = QTableWidget(self)  
+        self.table.setColumnCount(10)  # Увеличиваем на 1 для ID  
+        self.table.setHorizontalHeaderLabels([  
+            "ID", "ФИО", "Дата рождения", "Телефон", "Email", "Резюме",  
+            "Опыт работы", "Образование", "Навыки", "Статус"  
+        ])  
 
-        self.name_input = QLineEdit()  # Поле ввода для ФИО  
-        self.phone_input = QLineEdit()  # Поле ввода для номера телефона  
-        self.email_input = QLineEdit()  # Поле ввода для email  
-        self.dob_input = QDateEdit(QDate.currentDate())  # Поле ввода для даты рождения  
-        self.dob_input.setDisplayFormat('dd.MM.yyyy')  # Установка формата отображения даты  
-        self.id_label = QLabel("ID будет сгенерирован автоматически")  # Сообщение о генерации ID   
+        self.layout.addWidget(self.table)  
+        self.load_data()  
 
-        self.resume_button = QPushButton('Добавить резюме')  # Кнопка для добавления резюме  
-        self.resume_button.clicked.connect(self.add_resume)  # Подключение кнопки к функции добавления резюме  
+        # Скрываем столбец ID  
+        self.table.hideColumn(0)  # Скрываем первый столбец (ID)  
 
-        # Остальные поля для ввода  
-        self.experience_input = QLineEdit()  
-        self.education_input = QLineEdit()  
-        self.skills_input = QLineEdit()  
-        self.status_input = QComboBox()  
-        self.status_input.addItems(['активный', 'архивный', 'Неактивный'])  
+        # Кнопки для управления  
+        self.add_button = QPushButton("Добавить")  
+        self.add_button.clicked.connect(self.add_candidate)  
+        self.layout.addWidget(self.add_button)  
 
-        self.save_button = QPushButton('Сохранить')  # Кнопка для сохранения данных кандидата  
-        self.save_button.clicked.connect(self.save_candidate)  # Подключение кнопки к функции сохранения кандидата  
-        self.cancel_button = QPushButton('Отмена')  # Кнопка для отмены действия  
-        self.cancel_button.clicked.connect(self.reject)  # Подключение кнопки к функции закрытия диалога  
+        self.edit_button = QPushButton("Изменить")  
+        self.edit_button.clicked.connect(self.edit_candidate)  
+        self.layout.addWidget(self.edit_button)  
 
-        # Добавление виджетов в макет  
-        layout.addRow(QLabel('Фамилия Имя Отчество'), self.name_input)  # Добавление поля ФИО  
-        layout.addRow(QLabel('Номер телефона'), self.phone_input)  # Добавление поля для номера телефона  
-        layout.addRow(QLabel('Email'), self.email_input)  # Добавление поля для Email  
-        layout.addRow(QLabel('Дата рождения'), self.dob_input)  # Добавление поля для даты рождения  
-        layout.addRow(QLabel('Опыт работы'), self.experience_input)  # Добавление поля для опыта работы  
-        layout.addRow(QLabel('Образование'), self.education_input)  # Добавление поля для образования  
-        layout.addRow(QLabel('Навыки'), self.skills_input)  # Добавление поля для навыков  
-        layout.addRow(QLabel('Статус'), self.status_input)  # Добавление поля для статуса  
-        layout.addRow(self.id_label)  # Добавление сообщения о ID  
-        layout.addRow(self.resume_button, self.save_button)  # Добавление кнопок для резюме и сохранения  
-        layout.addRow(self.cancel_button)  # Добавление кнопки отмены  
+        self.delete_button = QPushButton("Удалить")  
+        self.delete_button.clicked.connect(self.delete_candidate)  
+        self.layout.addWidget(self.delete_button)  
 
-        self.setLayout(layout)  # Установка макета в диалоговом окне  
+    def load_data(self):  
+        connection = psycopg2.connect(  
+            dbname='postgres',  
+            user='postgres',  
+            password='1234',  
+            host='localhost',  
+            port='5432'  
+        )  
+        cursor = connection.cursor()  
+        cursor.execute("SELECT id, фио, дата_рождения, телефон, email, резюме, опыт_работы, образование, навыки, статус FROM Кандидаты ORDER BY id ASC")  
+        rows = cursor.fetchall()  
 
-        # Переменная для хранения пути к резюме  
-        self.resume_path = ""  
+        self.table.setRowCount(len(rows))  
+        for i, row in enumerate(rows):  
+            for j in range(len(row)):  
+                self.table.setItem(i, j, QTableWidgetItem(str(row[j])))  
 
-    def add_resume(self):  
-        # Открытие диалогового окна для выбора файла резюме  
-        self.resume_path, _ = QFileDialog.getOpenFileName(self, "Выберите файл резюме", "", "PDF Files (*.pdf);;Text Files (*.txt)")  
+        cursor.close()  
+        connection.close()  
 
-    def save_candidate(self):  
-        # Сбор данных из полей ввода  
+    def add_candidate(self):  
+        dialog = CandidateDialog(self, "Добавить кандидата")  
+        if dialog.exec_() == QDialog.Accepted:  
+            self.load_data()  
+
+    def edit_candidate(self):  
+        selected_row = self.table.currentRow()  
+        if selected_row < 0:  
+            QMessageBox.warning(self, "Ошибка", "Пожалуйста, выберите кандидата для изменения.")  
+            return  
+        
+        candidate_id = self.table.item(selected_row, 0).text()  
+        current_data = [self.table.item(selected_row, i).text() for i in range(1, 10)]  
+        dialog = CandidateDialog(self, "Изменить кандидата", current_data, candidate_id)  
+        if dialog.exec_() == QDialog.Accepted:  
+            self.load_data()   
+
+    def delete_candidate(self):  
+        selected_row = self.table.currentRow()  
+        if selected_row < 0:  
+            QMessageBox.warning(self, "Ошибка", "Пожалуйста, выберите кандидата для удаления.")  
+            return  
+
+        confirmed = QMessageBox.question(self, "Подтверждение", "Вы уверены, что хотите удалить этого кандидата?", QMessageBox.Yes | QMessageBox.No)  
+        if confirmed == QMessageBox.Yes:  
+            candidate_id = self.table.item(selected_row, 0).text()  
+            self.delete_from_db("Кандидаты", candidate_id)  
+            self.load_data()  
+
+    def delete_from_db(self, table_name, candidate_id):
+        connection = psycopg2.connect(  
+            dbname='postgres',  
+            user='postgres',  
+            password='1234',  
+            host='localhost',  
+            port='5432'  
+        )  
+        cursor = connection.cursor()  
+        cursor.execute(f"DELETE FROM {table_name} WHERE id = %s", (candidate_id,))  
+        connection.commit()  
+        cursor.close()  
+        connection.close()  
+
+class CandidateDialog(QDialog):  
+    def __init__(self, parent, title, candidate_data=None, candidate_id=None):  
+        super().__init__(parent)  
+        self.setWindowTitle(title)  
+        self.layout = QFormLayout(self)  
+
+        self.name_input = QLineEdit(self)  
+        self.birthday_input = QDateEdit(self)  
+        self.phone_input = QLineEdit(self)  
+        self.phone_input.setInputMask("+7(999)999-99-99;_")  # Маска для телефона  
+        self.email_input = QLineEdit(self)  
+        
+        # Устанавливаем валидатор для email  
+        email_regex = QRegularExpression(r"^[\w\.-]+@[\w\.-]+\.(ru|com)$")  
+        self.email_validator = QRegularExpressionValidator(email_regex, self.email_input)  
+        self.email_input.setValidator(self.email_validator)  
+
+        self.resume_input = QLineEdit(self)  
+        
+        # Устанавливаем валидатор для опыта работы (только цифры)  
+        self.experience_input = QLineEdit(self)  
+        self.experience_input.setValidator(QIntValidator(0, 100, self))  # Допускаем ввод только положительных чисел  
+
+        self.education_input = QComboBox(self)  
+        self.education_input.addItems(["Высшее", "СПО"])  # Выпадающий список для образования  
+        self.skills_input = QLineEdit(self)  
+        self.status_input = QComboBox(self)  
+        self.status_input.addItems(["Активный", "Архивированный", "Ушел"])  # Выпадающий список для статуса  
+        self.candidate_id = candidate_id  
+
+        # Заполняем поля только если переданы данные кандидата  
+        if candidate_data:  
+            self.name_input.setText(candidate_data[0])  
+            self.birthday_input.setDate(QDate.fromString(candidate_data[1], "yyyy-MM-dd"))   
+            self.phone_input.setText(candidate_data[2])  
+            self.email_input.setText(candidate_data[3])  
+            self.resume_input.setText(candidate_data[4])  
+            self.experience_input.setText(candidate_data[5])  
+            self.education_input.setCurrentText(candidate_data[6])  # Устанавливаем выбранное образование  
+            self.skills_input.setText(candidate_data[7])  
+            self.status_input.setCurrentText(candidate_data[8])  # Устанавливаем выбранный статус  
+
+        self.layout.addRow("ФИО:", self.name_input)  
+        self.layout.addRow("Дата рождения:", self.birthday_input)  
+        self.layout.addRow("Телефон:", self.phone_input)  
+        self.layout.addRow("Email:", self.email_input)  
+        self.layout.addRow("Резюме:", self.resume_input)  
+        self.layout.addRow("Опыт работы:", self.experience_input)  
+        self.layout.addRow("Образование:", self.education_input)  
+        self.layout.addRow("Навыки:", self.skills_input)  
+        self.layout.addRow("Статус:", self.status_input)  
+
+        self.save_button = QPushButton("Сохранить", self)  
+        self.save_button.clicked.connect(self.save)  
+        self.layout.addWidget(self.save_button)  
+
+        self.setLayout(self.layout)  
+
+    def save(self):  
+        # Сбор данных из полей  
         name = self.name_input.text()  
+        birthday = self.birthday_input.date().toString("yyyy-MM-dd")  
         phone = self.phone_input.text()  
         email = self.email_input.text()  
-        dob = self.dob_input.text()  
-        experience = self.experience_input.text()  
-        education = self.education_input.text()  
+        resume = self.resume_input.text()  
+        experience = self.experience_input.text()   
+        education = self.education_input.currentText()  
         skills = self.skills_input.text()  
         status = self.status_input.currentText()  
-        creation_time = QDateTime.currentDateTime().toString('yyyy-MM-dd HH:mm:ss')  # Текущее время в формате YYYY-MM-DD HH:MM:SS  
 
-        # Добавление кандидата в таблицу  
-        self.parent().add_candidate(name, phone, dob, email, self.resume_path, experience, education, skills, status, creation_time)  
-        self.accept()  # Закрытие диалогового окна после сохранения кандидата 
-  
+        # Проверка на заполнение всех обязательных полей  
+        if not all([name, birthday, phone, email, resume, experience, education, skills, status]):  
+            QMessageBox.warning(self, "Ошибка", "Пожалуйста, заполните все обязательные поля.")  
+            return  
 
-class AddEmployerDialog(QDialog):  
-    def __init__(self, parent=None):  
+        # Проверка на валидность email  
+        if self.email_input.hasAcceptableInput() == False:  
+            QMessageBox.warning(self, "Ошибка", "Пожалуйста, введите корректный Email по шаблону: xxxxxx@xxxx.ru/com.")  
+            return  
+
+        # Определяем, добавляем или редактируем  
+        is_editing = self.windowTitle() == "Изменить кандидата"  
+
+        # Подключение к базе данных  
+        connection = psycopg2.connect(  
+            dbname='postgres',  
+            user='postgres',  
+            password='1234',  
+            host='localhost',  
+            port='5432'  
+        )  
+        cursor = connection.cursor()  
+
+        if is_editing:  
+            # Обновление существующей записи, используя id  
+            cursor.execute("""  
+                UPDATE Кандидаты   
+                SET фио = %s, дата_рождения = %s, телефон = %s, email = %s, резюме = %s,  
+                    опыт_работы = %s, образование = %s, навыки = %s, статус = %s   
+                WHERE id = %s  
+            """, (name, birthday, phone, email, resume, experience, education, skills, status, self.candidate_id))  
+        else:  
+            # Вставка новой записи  
+            cursor.execute("""  
+                INSERT INTO Кандидаты (фио, дата_рождения, телефон, email, резюме,   
+                    опыт_работы, образование, навыки, статус)   
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)  
+            """, (name, birthday, phone, email, resume, experience, education, skills, status))  
+
+        connection.commit()  
+        cursor.close()  
+        connection.close()  
+        self.accept()  # Закрываем диалог с успешным завершением  
+
+# Employer Tab Class  
+class EmployerTab(QWidget):  
+    def __init__(self, parent):  
         super().__init__(parent)  
-        self.setWindowTitle('Добавить Работодателя')  # Установка заголовка диалогового окна  
+        self.layout = QVBoxLayout(self)  
 
-        # Создание макета формы  
-        layout = QFormLayout()  
+        self.table = QTableWidget(self)  
+        self.table.setColumnCount(4)   
+        self.table.setHorizontalHeaderLabels(["ID", "Название", "Контактные данные", "Описание"])  
+        self.table.setColumnHidden(0, True)  # Скрываем столбец ID  
 
-        self.name_input = QLineEdit()  # Поле ввода для названия работодателя  
-        self.contact_input = QLineEdit()  # Поле ввода для контактных данных  
-        self.description_input = QLineEdit()  # Поле ввода для описания работодателя  
-        # Поле для отображения ID (только для чтения)  
-        self.id_label = QLabel("ID будет сгенерирован автоматически")  # Сообщение о генерации ID  
+        self.layout.addWidget(self.table)  
+        self.load_data()  
 
-        self.save_button = QPushButton('Сохранить')  # Кнопка для сохранения данных работодателя  
-        self.save_button.clicked.connect(self.save_employer)  # Подключение кнопки к функции сохранения работодателя  
-        self.cancel_button = QPushButton('Отмена')  # Кнопка для отмены действия  
-        self.cancel_button.clicked.connect(self.reject)  # Подключение кнопки к функции закрытия диалога  
+        # Add buttons for CRUD operations  
+        self.add_button = QPushButton("Добавить")  
+        self.add_button.clicked.connect(self.add_employer)  
+        self.layout.addWidget(self.add_button)  
 
-        # Добавление виджетов в макет  
-        layout.addRow(QLabel('Название'), self.name_input)  # Добавление поля для названия  
-        layout.addRow(QLabel('Контактные данные'), self.contact_input)  # Добавление поля для контактных данных  
-        layout.addRow(QLabel('Описание'), self.description_input)  # Добавление поля для описания  
-        layout.addRow(self.id_label)  # Добавление поля для ID  
+        self.edit_button = QPushButton("Изменить")  
+        self.edit_button.clicked.connect(self.edit_employer)  
+        self.layout.addWidget(self.edit_button)  
 
-        layout.addRow(self.save_button, self.cancel_button)  # Добавление кнопок для сохранения и отмены  
+        self.delete_button = QPushButton("Удалить")  
+        self.delete_button.clicked.connect(self.delete_employer)  
+        self.layout.addWidget(self.delete_button)  
+
+    def load_data(self):  
+        connection = psycopg2.connect(  
+            dbname='postgres',  
+            user='postgres',  
+            password='1234',  
+            host='localhost',  
+            port='5432'  
+        )  
+        cursor = connection.cursor()  
+        cursor.execute("SELECT id, название, контактные_данные, описание FROM Работодатели ORDER BY id ASC")  # Сортировка по id  
+        rows = cursor.fetchall()  
+
+        self.table.setRowCount(len(rows))  
+        for i, row in enumerate(rows):  
+            for j in range(len(row)):  
+                self.table.setItem(i, j, QTableWidgetItem(str(row[j])))  
+
+        cursor.close()  
+        connection.close()  
+
+        # Установите сортировку по первой колонке (id)  
+        self.table.sortItems(0, Qt.AscendingOrder)  
+
+    def add_employer(self):  
+        dialog = EmployerDialog(self, "Добавить работодателя")  
+        if dialog.exec_() == QDialog.Accepted:  
+            self.load_data()  
+
+    def edit_employer(self):  
+        selected_row = self.table.currentRow()  
+        if selected_row < 0:  
+            QMessageBox.warning(self, "Ошибка", "Пожалуйста, выберите работодателя для изменения.")  
+            return  
+        current_data = [self.table.item(selected_row, i).text() for i in range(4)]  # Получаем данные включая ID  
+        dialog = EmployerDialog(self, "Изменить работодателя", current_data)  
+        if dialog.exec_() == QDialog.Accepted:  
+            self.load_data()  
+
+    def delete_employer(self):  
+        selected_row = self.table.currentRow()  
+        if selected_row < 0:  
+            QMessageBox.warning(self, "Ошибка", "Пожалуйста, выберите работодателя для удаления.")  
+            return  
+
+        confirmed = QMessageBox.question(self, "Подтверждение", "Вы уверены, что хотите удалить этого работодателя?", QMessageBox.Yes | QMessageBox.No)  
+        if confirmed == QMessageBox.Yes:  
+            employer_id = self.table.item(selected_row, 0).text()  # Получаем ID для удаления  
+            self.delete_from_db(employer_id)  
+            self.load_data()  
+
+    def delete_from_db(self, employer_id):  
+        connection = psycopg2.connect(  
+            dbname='postgres',  
+            user='postgres',  
+            password='1234',  
+            host='localhost',  
+            port='5432'  
+        )  
+        cursor = connection.cursor()  
+        cursor.execute("DELETE FROM Работодатели WHERE id = %s", (employer_id,))  
+        connection.commit()  
+        cursor.close()  
+        connection.close()  
+
+class EmployerDialog(QDialog):  
+    def __init__(self, parent, title, employer_data=None):  
+        super().__init__(parent)  
+        self.setWindowTitle(title)  
+        self.layout = QFormLayout(self)  
+
+        self.id_input = QLineEdit(self)  # Поле для id, которое будет скрыто  
+        self.id_input.setVisible(False)  # Скрываем поле id  
+
+        self.name_input = QLineEdit(self)  
+        self.contact_input = QLineEdit(self)  
+        self.description_input = QLineEdit(self)  
+
+        # Устанавливаем валидатор для email  
+        email_regex = QRegularExpression(r"^[\w\.-]+@[\w\.-]+\.(ru|com)$")  
+        self.email_validator = QRegularExpressionValidator(email_regex, self.contact_input)  
+        self.contact_input.setValidator(self.email_validator)  
+
+        if employer_data:  
+            self.id_input.setText(employer_data[0])  # Устанавливаем id  
+            self.name_input.setText(employer_data[1])  
+            self.contact_input.setText(employer_data[2])  
+            self.description_input.setText(employer_data[3])  
         
-        self.setLayout(layout)  # Установка макета в диалоговом окне  
+        self.layout.addRow("ID:", self.id_input)  # Добавляем id (но скрываем)  
+        self.layout.addRow("Название:", self.name_input)  
+        self.layout.addRow("Контактные данные:", self.contact_input)  
+        self.layout.addRow("Описание:", self.description_input)  
 
-    def save_employer(self):  
-        # Сбор данных из полей ввода  
+        self.save_button = QPushButton("Сохранить", self)  
+        self.save_button.clicked.connect(self.save)  
+        self.layout.addWidget(self.save_button)  
+
+        self.setLayout(self.layout)  
+
+    def save(self):  
+        employer_id = self.id_input.text()  # Получаем id из скрытого поля  
         name = self.name_input.text()  
         contact = self.contact_input.text()  
         description = self.description_input.text()  
-        creation_date = QDate.currentDate().toString('yyyy-MM-dd')  # Текущая дата в формате YYYY-MM-DD  
 
-        # Генерируем ID автоматически (например, через последовательность в базе данных)  
-        # Здесь предполагается, что метод add_employer реализован в родительском классе  
-        # и в него будет передан автоматически сгенерированный ID  
-        self.parent().add_employer(name, contact, description, creation_date)  
-        self.accept()  # Закрытие диалогового окна после сохранения работодателя  
+        # Проверка на заполнение всех обязательных полей  
+        if not name or not contact or not description:  
+            QMessageBox.warning(self, "Ошибка", "Пожалуйста, заполните все обязательные поля.")  
+            return  
+        
+        # Проверка на валидность email  
+        if not self.contact_input.hasAcceptableInput():  
+            QMessageBox.warning(self, "Ошибка", "Пожалуйста, введите корректный Email в формате xxxxxx@xxxxx.ru/com.")  
+            return  
 
-class AddVacancyDialog(QDialog):  
-    def __init__(self, parent=None):  
+        is_editing = self.windowTitle() == "Изменить работодателя"  
+
+        connection = psycopg2.connect(  
+            dbname='postgres',  
+            user='postgres',  
+            password='1234',  
+            host='localhost',  
+            port='5432'  
+        )  
+        cursor = connection.cursor()  
+
+        if is_editing:  
+            cursor.execute("""  
+                UPDATE Работодатели   
+                SET название = %s, контактные_данные = %s, описание = %s   
+                WHERE id = %s  
+            """, (name, contact, description, employer_id))  
+        else:  
+            cursor.execute("""  
+                INSERT INTO Работодатели (название, контактные_данные, описание)   
+                VALUES (%s, %s, %s)  
+            """, (name, contact, description))  
+
+        connection.commit()  
+        cursor.close()  
+        connection.close()  
+        self.accept() 
+
+# Vacancy Tab Class  
+class VacancyTab(QWidget):  
+    def __init__(self, parent):  
         super().__init__(parent)  
-        self.setWindowTitle('Добавить Вакансию')  # Установка заголовка диалогового окна  
+        self.layout = QVBoxLayout(self)  
 
-        # Создание макета формы  
-        layout = QFormLayout()  
+        self.table = QTableWidget(self)  
+        self.table.setColumnCount(8)  # Увеличиваем на 1 для ID  
+        self.table.setHorizontalHeaderLabels([  
+            "ID", "Название должности", "Описание", "Требования", "Работодатель ID", "Дата открытия", "Дата закрытия", "Статус"  
+        ])  
 
-        self.title_input = QLineEdit()  # Поле ввода для названия должности  
-        self.description_input = QLineEdit()  # Поле ввода для описания вакансии  
-        self.requirements_input = QLineEdit()  # Поле ввода для требований  
-        self.min_experience_input = QLineEdit()  # Поле ввода для минимального опыта  
-        self.employer_id_input = QLineEdit()  # Поле ввода для ID работодателя  
-        self.opening_date_input = QDateEdit(QDate.currentDate())  # Поле ввода для даты открытия  
-        self.opening_date_input.setDisplayFormat('dd.MM.yyyy')  # Установка формата отображения даты  
-        self.closing_date_input = QDateEdit(QDate.currentDate())  # Поле ввода для даты закрытия  
-        self.closing_date_input.setDisplayFormat('dd.MM.yyyy')  # Установка формата отображения даты  
-        self.status_input = QComboBox()  # Выпадающий список для статуса вакансии  
-        self.status_input.addItems(['Открыта', 'Закрыта', 'Приостановлена'])  # Статусы вакансии  
-        self.creation_time_label = QLabel("Дата создания будет установлена автоматически")  # Сообщение о времени создания  
+        self.layout.addWidget(self.table)  
+        self.load_data()  
 
-        self.save_button = QPushButton('Сохранить')  # Кнопка для сохранения данных вакансии  
-        self.save_button.clicked.connect(self.save_vacancy)  # Подключение кнопки к функции сохранения вакансии  
-        self.cancel_button = QPushButton('Отмена')  # Кнопка для отмены действия  
-        self.cancel_button.clicked.connect(self.reject)  # Подключение кнопки к функции закрытия диалога  
+        # Скрываем столбец ID  
+        self.table.hideColumn(0)  # Скрываем первый столбец (ID)  
 
-        # Добавление виджетов в макет  
-        layout.addRow(QLabel('Название должности'), self.title_input)  # Добавление поля для названия должности  
-        layout.addRow(QLabel('Описание'), self.description_input)  # Добавление поля для описания  
-        layout.addRow(QLabel('Требования'), self.requirements_input)  # Добавление поля для требований  
-        layout.addRow(QLabel('Минимальный опыт'), self.min_experience_input)  # Добавление поля для минимального опыта  
-        layout.addRow(QLabel('Работодатель ID'), self.employer_id_input)  # Добавление поля для ID работодателя  
-        layout.addRow(QLabel('Дата открытия'), self.opening_date_input)  # Добавление поля для даты открытия  
-        layout.addRow(QLabel('Дата закрытия'), self.closing_date_input)  # Добавление поля для даты закрытия  
-        layout.addRow(QLabel('Статус'), self.status_input)  # Добавление поля для статуса  
-        layout.addRow(self.creation_time_label)  # Добавление сообщения о времени создания  
+        # Кнопки для управления  
+        self.add_button = QPushButton("Добавить")  
+        self.add_button.clicked.connect(self.add_vacancy)  
+        self.layout.addWidget(self.add_button)  
 
-        layout.addRow(self.save_button, self.cancel_button)  # Добавление кнопок для сохранения и отмены  
+        self.edit_button = QPushButton("Изменить")  
+        self.edit_button.clicked.connect(self.edit_vacancy)  
+        self.layout.addWidget(self.edit_button)  
 
-        self.setLayout(layout)  # Установка макета в диалоговом окне  
+        self.delete_button = QPushButton("Удалить")  
+        self.delete_button.clicked.connect(self.delete_vacancy)  
+        self.layout.addWidget(self.delete_button)  
 
-    def save_vacancy(self):  
-        # Сбор данных из полей ввода  
+    def load_data(self):  
+        connection = psycopg2.connect(  
+            dbname='postgres',  
+            user='postgres',  
+            password='1234',  
+            host='localhost',  
+            port='5432'  
+        )  
+        cursor = connection.cursor()  
+        cursor.execute("SELECT id, название_должности, описание, требования, работодатель_id, дата_открытия, дата_закрытия, статус FROM Вакансии ORDER BY id ASC")  
+        rows = cursor.fetchall()  
+
+        self.table.setRowCount(len(rows))  
+        for i, row in enumerate(rows):  
+            for j in range(len(row)):  
+                self.table.setItem(i, j, QTableWidgetItem(str(row[j])))  
+
+        cursor.close()  
+        connection.close()  
+
+    def add_vacancy(self):  
+        dialog = VacancyDialog(self, "Добавить вакансию")  
+        if dialog.exec_() == QDialog.Accepted:  
+            self.load_data()  
+
+    def edit_vacancy(self):  
+        selected_row = self.table.currentRow()  
+        if selected_row < 0:  
+            QMessageBox.warning(self, "Ошибка", "Пожалуйста, выберите вакансию для изменения.")  
+            return  
+        
+        vacancy_id = self.table.item(selected_row, 0).text()  # Получаем ID для редактирования  
+        current_data = [self.table.item(selected_row, i).text() for i in range(1, 8)]  # Получаем данные без ID  
+        dialog = VacancyDialog(self, "Изменить вакансию", current_data, vacancy_id)  
+        if dialog.exec_() == QDialog.Accepted:  
+            self.load_data()  
+
+    def delete_vacancy(self):  
+        selected_row = self.table.currentRow()  
+        if selected_row < 0:  
+            QMessageBox.warning(self, "Ошибка", "Пожалуйста, выберите вакансию для удаления.")  
+            return  
+
+        confirmed = QMessageBox.question(self, "Подтверждение", "Вы уверены, что хотите удалить эту вакансию?", QMessageBox.Yes | QMessageBox.No)  
+        if confirmed == QMessageBox.Yes:  
+            vacancy_id = self.table.item(selected_row, 0).text()  # Получаем ID для удаления  
+            self.delete_from_db("Вакансии", vacancy_id)  
+            self.load_data()  
+
+    def delete_from_db(self, table_name, vacancy_id):  
+        connection = psycopg2.connect(  
+            dbname='postgres',  
+            user='postgres',  
+            password='1234',  
+            host='localhost',  
+            port='5432'  
+        )  
+        cursor = connection.cursor()  
+        cursor.execute(f"DELETE FROM {table_name} WHERE id = %s", (vacancy_id,))  
+        connection.commit()  
+        cursor.close()  
+        connection.close()  
+
+class VacancyDialog(QDialog):  
+    def __init__(self, parent, title, vacancy_data=None, vacancy_id=None):  
+        super().__init__(parent)  
+        self.setWindowTitle(title)  
+        self.layout = QFormLayout(self)  
+
+        self.title_input = QLineEdit(self)  
+        self.description_input = QLineEdit(self)  
+        self.requirements_input = QLineEdit(self)  
+        self.employer_id_input = QComboBox(self)  # Используем QComboBox для выбора работодателя  
+        self.open_date_input = QDateEdit(self)  
+        self.close_date_input = QDateEdit(self)  
+        self.status_input = QComboBox(self)  # Используем QComboBox для статуса  
+
+        # Заполнение выпадающего списка для статуса  
+        self.status_input.addItems(["Открыта", "Закрыта"])  
+
+        # Заполнение выпадающего списка для работодателей  
+        self.load_employers()  
+
+        if vacancy_data:  
+            self.title_input.setText(vacancy_data[0])  
+            self.description_input.setText(vacancy_data[1])  
+            self.requirements_input.setText(vacancy_data[2])  
+            self.employer_id_input.setCurrentText(vacancy_data[3])  # Устанавливаем выбранного работодателя  
+            self.open_date_input.setDate(QDate.fromString(vacancy_data[4], "yyyy-MM-dd"))  
+            self.close_date_input.setDate(QDate.fromString(vacancy_data[5], "yyyy-MM-dd"))  
+            self.status_input.setCurrentText(vacancy_data[6])  # Устанавливаем статус  
+        
+        self.layout.addRow("Название должности:", self.title_input)  
+        self.layout.addRow("Описание:", self.description_input)  
+        self.layout.addRow("Требования:", self.requirements_input)  
+        self.layout.addRow("Работодатель:", self.employer_id_input)  # Изменено на QComboBox  
+        self.layout.addRow("Дата открытия:", self.open_date_input)  
+        self.layout.addRow("Дата закрытия:", self.close_date_input)  
+        self.layout.addRow("Статус:", self.status_input)  # Изменено на QComboBox  
+
+        self.save_button = QPushButton("Сохранить", self)  
+        self.save_button.clicked.connect(self.save)  
+        self.layout.addWidget(self.save_button)  
+
+        self.setLayout(self.layout)  
+
+    def load_employers(self):  
+        connection = psycopg2.connect(  
+            dbname='postgres',  
+            user='postgres',  
+            password='1234',  
+            host='localhost',  
+            port='5432'  
+        )  
+        cursor = connection.cursor()  
+        cursor.execute("SELECT id, название FROM Работодатели")  # Получаем id и название работодателей  
+        employers = cursor.fetchall()  
+
+        for employer in employers:  
+            self.employer_id_input.addItem(f"{employer[0]} - {employer[1]}")  # Добавляем в ComboBox  
+
+        cursor.close()  
+        connection.close()  
+
+    def save(self):  
         title = self.title_input.text()  
         description = self.description_input.text()  
         requirements = self.requirements_input.text()  
-        min_experience = self.min_experience_input.text()  
-        employer_id = self.employer_id_input.text()  # Получение ID работодателя  
-        opening_date = self.opening_date_input.text()  
-        closing_date = self.closing_date_input.text()  
-        status = self.status_input.currentText()  
-        creation_date = QDate.currentDate().toString('yyyy-MM-dd')  # Текущая дата в формате YYYY-MM-DD  
+        employer_id = self.employer_id_input.currentText().split(" - ")[0]  # Получаем только ID работодателя  
+        open_date = self.open_date_input.date().toString("yyyy-MM-dd")  
+        close_date = self.close_date_input.date().toString("yyyy-MM-dd")  
+        status = self.status_input.currentText()  # Получаем выбранный статус  
 
-        # Здесь предполагается, что метод add_vacancy реализован в родительском классе  
-        self.parent().add_vacancy(title, description, requirements, min_experience, employer_id, opening_date, closing_date, status, creation_date)  
-        self.accept()  # Закрытие диалогового окна после сохранения вакансии
+        is_editing = self.windowTitle() == "Изменить вакансию"  
         
-if __name__ == '__main__':  
-    app = QApplication(sys.argv)  # Создание экземпляра приложения  
-    main_win = MainWindow()  # Создание главного окна  
-    main_win.show()  # Отображение главного окна  
-    sys.exit(app.exec_())  # Запуск цикла обработки событий приложения  
+        connection = psycopg2.connect(  
+            dbname='postgres',  
+            user='postgres',  
+            password='1234',  
+            host='localhost',  
+            port='5432'  
+        )  
+        cursor = connection.cursor()  
+
+        if is_editing:  
+            # Получаем ID вакансии по которому выполняется редактирование  
+            cursor.execute("""  
+                UPDATE Вакансии SET описание = %s, требования = %s, работодатель_id = %s, дата_открытия = %s, дата_закрытия = %s, статус = %s WHERE название_должности = %s """, (description, requirements, employer_id, open_date, close_date, status, title))  
+        else:  
+            cursor.execute("""INSERT INTO Вакансии (название_должности, описание, требования, работодатель_id, дата_открытия, дата_закрытия, статус) VALUES (%s, %s, %s, %s, %s, %s, %s)  """, (title, description, requirements, employer_id, open_date, close_date, status))  
+
+        connection.commit()  
+        cursor.close()  
+        connection.close()  
+        self.accept()
+
+if __name__ == "__main__":  
+    app = QApplication(sys.argv)  
+    main_app = MainApp()  
+    main_app.show()  
+    sys.exit(app.exec_()) 
