@@ -1,9 +1,11 @@
 import sys
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QTableWidget,   
-                             QTableWidgetItem, QPushButton,   
+import os  
+import webbrowser
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QTableWidget, QAbstractItemView,
+                             QTableWidgetItem, QPushButton, QFileDialog, 
                              QMessageBox, QDialog, QFormLayout,   
                              QComboBox, QLineEdit, QDateEdit, QMainWindow, QApplication, QTabWidget)  
-from PyQt5.QtGui import QIntValidator, QRegularExpressionValidator  
+from PyQt5.QtGui import QIntValidator, QRegularExpressionValidator 
 from PyQt5.QtCore import QRegularExpression, QDate, Qt
 import psycopg2
     
@@ -27,7 +29,13 @@ class MainApp(QMainWindow):
         self.candidates_tab = CandidateTab(self)  
         self.employers_tab = EmployerTab(self)  
         self.vacancies_tab = VacancyTab(self)  
-        self.candidate_vacancy_tab = CandidateVacancyTab(self)  # Новый таб  
+        self.candidate_vacancy_tab = CandidateVacancyTab(self)  
+        '''
+        Талица Кандидаты
+        Таблица Работодатели
+        Таблица Вакансии
+        Таблица Предентент_навакансию
+        '''
 
         # Add tabs to the interface  
         self.tabs.addTab(self.candidates_tab, "Кандидаты")  
@@ -52,8 +60,10 @@ class CandidateTab(QWidget):
         self.layout.addWidget(self.table)  
         self.load_data()  
 
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)  
+
         # Скрываем столбец ID  
-        self.table.hideColumn(0)  # Скрываем первый столбец (ID)  
+        self.table.hideColumn(0)  
 
         # Кнопки для управления  
         self.add_button = QPushButton("Добавить")  
@@ -67,6 +77,11 @@ class CandidateTab(QWidget):
         self.delete_button = QPushButton("Удалить")  
         self.delete_button.clicked.connect(self.delete_candidate)  
         self.layout.addWidget(self.delete_button)  
+
+        # Кнопка для открытия резюме  
+        self.open_resume_button = QPushButton("Открыть резюме")  
+        self.open_resume_button.clicked.connect(self.open_resume)  
+        self.layout.addWidget(self.open_resume_button)  
 
     def load_data(self):  
         connection = psycopg2.connect(  
@@ -86,7 +101,9 @@ class CandidateTab(QWidget):
                 self.table.setItem(i, j, QTableWidgetItem(str(row[j])))  
 
         cursor.close()  
-        connection.close()  
+        connection.close()   
+
+        self.table.resizeColumnsToContents()   
 
     def add_candidate(self):  
         dialog = CandidateDialog(self, "Добавить кандидата")  
@@ -122,7 +139,7 @@ class CandidateTab(QWidget):
             self.delete_from_db("Кандидаты", candidate_id)  
             self.load_data()  
 
-    def delete_from_db(self, table_name, candidate_id):
+    def delete_from_db(self, table_name, candidate_id):  
         connection = psycopg2.connect(  
             dbname='postgres',  
             user='postgres',  
@@ -135,6 +152,22 @@ class CandidateTab(QWidget):
         connection.commit()  
         cursor.close()  
         connection.close()  
+
+    def open_resume(self):  
+        selected_row = self.table.currentRow()  
+        if selected_row < 0:  
+            QMessageBox.warning(self, "Ошибка", "Пожалуйста, выберите резюме кандидата для открытия.")  
+            return  
+
+        # Получаем путь к резюме  
+        resume_path = self.table.item(selected_row, 5).text()  # Предполагается, что путь к резюме в 6-м столбце (индекс 5)  
+        
+        if not os.path.exists(resume_path):  
+            QMessageBox.warning(self, "Ошибка", "Файл резюме по указанному пути не найден. Измените путь или проверьте наличие файла.")  
+            return  
+
+        # Открываем резюме в браузере  
+        webbrowser.open(resume_path)  
 
 class CandidateDialog(QDialog):  
     def __init__(self, parent, title, candidate_data=None, candidate_id=None):  
@@ -154,6 +187,8 @@ class CandidateDialog(QDialog):
         self.email_input.setValidator(self.email_validator)  
 
         self.resume_input = QLineEdit(self)  
+        self.resume_button = QPushButton("Выбрать резюме", self)  
+        self.resume_button.clicked.connect(self.select_resume)  # Подключаем кнопку к методу выбора файла  
         
         # Устанавливаем валидатор для опыта работы (только цифры)  
         self.experience_input = QLineEdit(self)  
@@ -164,7 +199,7 @@ class CandidateDialog(QDialog):
         self.specialization_input = QLineEdit(self)  # Изменено на specialization_input для ясности  
         self.skills_input = QLineEdit(self)  
         self.status_input = QComboBox(self)  
-        self.status_input.addItems(["Активный", "Архивированный", "Ушел"])  # Выпадающий список для статуса  
+        self.status_input.addItems(["Активный", "Архивированный"])  # Выпадающий список для статуса  
         self.candidate_id = candidate_id  
 
         # Заполняем поля только если переданы данные кандидата  
@@ -185,6 +220,7 @@ class CandidateDialog(QDialog):
         self.layout.addRow("Телефон:", self.phone_input)  
         self.layout.addRow("Email:", self.email_input)  
         self.layout.addRow("Резюме:", self.resume_input)  
+        self.layout.addWidget(self.resume_button)  # Добавляем кнопку выбора резюме под полем  
         self.layout.addRow("Опыт работы:", self.experience_input)  
         self.layout.addRow("Образование:", self.education_input)  
         self.layout.addRow("Специальность:", self.specialization_input)  
@@ -196,6 +232,13 @@ class CandidateDialog(QDialog):
         self.layout.addWidget(self.save_button)  
 
         self.setLayout(self.layout)  
+
+    def select_resume(self):  
+        options = QFileDialog.Options()  
+        options |= QFileDialog.ReadOnly  
+        file_name, _ = QFileDialog.getOpenFileName(self, "Выберите резюме", "", "PDF Files (*.pdf);;All Files (*)", options=options)  
+        if file_name:  
+            self.resume_input.setText(file_name)  # Устанавливаем путь к выбранному резюме в поле ввода  
 
     def save(self):  
         # Сбор данных из полей  
@@ -263,12 +306,13 @@ class EmployerTab(QWidget):
         self.table = QTableWidget(self)  
         self.table.setColumnCount(4)   
         self.table.setHorizontalHeaderLabels(["ID", "Название", "Контактные данные", "Описание"])  
-        self.table.setColumnHidden(0, True)  # Скрываем столбец ID  
-
+        self.table.setColumnHidden(0, True)  # Скрываем столбец ID
+  
         self.layout.addWidget(self.table)  
         self.load_data()  
 
-        # Add buttons for CRUD operations  
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+
         self.add_button = QPushButton("Добавить")  
         self.add_button.clicked.connect(self.add_employer)  
         self.layout.addWidget(self.add_button)  
@@ -302,7 +346,8 @@ class EmployerTab(QWidget):
         connection.close()  
 
         # Установите сортировку по первой колонке (id)  
-        self.table.sortItems(0, Qt.AscendingOrder)  
+        self.table.sortItems(0, Qt.AscendingOrder)
+        self.table.resizeColumnsToContents()  
 
     def add_employer(self):  
         dialog = EmployerDialog(self, "Добавить работодателя")  
@@ -430,9 +475,9 @@ class VacancyTab(QWidget):
         self.layout = QVBoxLayout(self)  
 
         self.table = QTableWidget(self)  
-        self.table.setColumnCount(9)  # Увеличиваем на 1 для специальности  
+        self.table.setColumnCount(8)  # Увеличиваем на 1 для специальности  
         self.table.setHorizontalHeaderLabels([  
-            "ID", "Название должности", "Описание", "Требования", "Работодатель ID", "Специальность", "Дата открытия", "Дата закрытия", "Статус"  
+            "ID", "Название должности", "Описание", "Требования", "Работодатель ID", "Специальность", "Минимальный опыт работы", "Статус"  
         ])  
 
         self.layout.addWidget(self.table)  
@@ -440,6 +485,9 @@ class VacancyTab(QWidget):
 
         # Скрываем столбец ID  
         self.table.hideColumn(0)  # Скрываем первый столбец (ID)  
+
+        # Устанавливаем режим выбора строк  
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)  
 
         # Кнопки для управления  
         self.add_button = QPushButton("Добавить")  
@@ -463,7 +511,7 @@ class VacancyTab(QWidget):
             port='5432'  
         )  
         cursor = connection.cursor()  
-        cursor.execute("SELECT id, название_должности, описание, требования, работодатель_id, специальность, дата_открытия, дата_закрытия, статус FROM Вакансии ORDER BY id ASC")  
+        cursor.execute("SELECT id, название_должности, описание, требования, работодатель_id, специальность, минимальный_опыт, статус FROM Вакансии ORDER BY id ASC")  
         rows = cursor.fetchall()  
 
         self.table.setRowCount(len(rows))  
@@ -472,7 +520,9 @@ class VacancyTab(QWidget):
                 self.table.setItem(i, j, QTableWidgetItem(str(row[j])))  
 
         cursor.close()  
-        connection.close()  
+        connection.close()
+
+        self.table.resizeColumnsToContents()  
 
     def add_vacancy(self):  
         dialog = VacancyDialog(self, "Добавить вакансию")  
@@ -486,7 +536,7 @@ class VacancyTab(QWidget):
             return  
         
         vacancy_id = self.table.item(selected_row, 0).text()  # Получаем ID для редактирования  
-        current_data = [self.table.item(selected_row, i).text() for i in range(1, 9)]  # Получаем данные без ID  
+        current_data = [self.table.item(selected_row, i).text() for i in range(1, 8)]  # Получаем данные без ID  
         dialog = VacancyDialog(self, "Изменить вакансию", current_data, vacancy_id)  
         if dialog.exec_() == QDialog.Accepted:  
             self.load_data()  
@@ -529,10 +579,10 @@ class VacancyDialog(QDialog):
         self.description_input = QLineEdit(self)  
         self.requirements_input = QLineEdit(self)  
         self.employer_id_input = QComboBox(self)  
-        self.specialty_input = QLineEdit(self)  
-        self.open_date_input = QDateEdit(self)  
-        self.close_date_input = QDateEdit(self)  
+        self.specialty_input = QLineEdit(self)
+        self.min_experience_input = QLineEdit(self)    
         self.status_input = QComboBox(self)  
+  # Новое поле для минимального опыта работы  
 
         self.status_input.addItems(["Открыта", "Закрыта"])  
 
@@ -543,53 +593,58 @@ class VacancyDialog(QDialog):
             self.description_input.setText(vacancy_data[1])  
             self.requirements_input.setText(vacancy_data[2])  
             self.employer_id_input.setCurrentText(vacancy_data[3])  
-            self.specialty_input.setText(vacancy_data[4])  
-            self.open_date_input.setDate(QDate.fromString(vacancy_data[5], "yyyy-MM-dd"))  
-            self.close_date_input.setDate(QDate.fromString(vacancy_data[6], "yyyy-MM-dd"))  
-            self.status_input.setCurrentText(vacancy_data[7])  
-        
+            self.specialty_input.setText(vacancy_data[4])
+            self.min_experience_input.setText(str(vacancy_data[5]))  # Заполняем поле минимального опыта работы    
+            self.status_input.setCurrentText(vacancy_data[6])    
+
         self.layout.addRow("Название должности:", self.title_input)  
         self.layout.addRow("Описание:", self.description_input)  
         self.layout.addRow("Требования:", self.requirements_input)  
         self.layout.addRow("Работодатель:", self.employer_id_input)  
-        self.layout.addRow("Специальность:", self.specialty_input)  
-        self.layout.addRow("Дата открытия:", self.open_date_input)  
-        self.layout.addRow("Дата закрытия:", self.close_date_input)  
+        self.layout.addRow("Специальность:", self.specialty_input)
+        self.layout.addRow("Минимальный опыт работы:", self.min_experience_input)      
         self.layout.addRow("Статус:", self.status_input)  
+  
 
         self.save_button = QPushButton("Сохранить", self)  
         self.save_button.clicked.connect(self.save)  
         self.layout.addWidget(self.save_button)  
 
-        self.setLayout(self.layout)  
+        self.setLayout(self.layout)
 
     def load_employers(self):  
-        connection = psycopg2.connect(  
-            dbname='postgres',  
-            user='postgres',  
-            password='1234',  
-            host='localhost',  
-            port='5432'  
-        )  
-        cursor = connection.cursor()  
-        cursor.execute("SELECT id, название FROM Работодатели")  
-        employers = cursor.fetchall()  
+            connection = psycopg2.connect(  
+                dbname='postgres',  
+                user='postgres',  
+                password='1234',  
+                host='localhost',  
+                port='5432'  
+            )  
+            cursor = connection.cursor()  
+            cursor.execute("SELECT id, название FROM Работодатели")  
+            employers = cursor.fetchall()  
 
-        for employer in employers:  
-            self.employer_id_input.addItem(f"{employer[0]} - {employer[1]}")  
+            for employer in employers:  
+                self.employer_id_input.addItem(f"{employer[0]} - {employer[1]}")  
 
-        cursor.close()  
-        connection.close()  
-
+            cursor.close()  
+            connection.close()  
     def save(self):  
-        title = self.title_input.text()  
-        description = self.description_input.text()  
-        requirements = self.requirements_input.text()  
+        title = self.title_input.text().strip()  
+        description = self.description_input.text().strip()  
+        requirements = self.requirements_input.text().strip()  
         employer_id = self.employer_id_input.currentText().split(" - ")[0]  
-        specialty = self.specialty_input.text()  # Получаем специальность   
-        open_date = self.open_date_input.date().toString("yyyy-MM-dd")  
-        close_date = self.close_date_input.date().toString("yyyy-MM-dd")  
+        specialty = self.specialty_input.text().strip()    
         status = self.status_input.currentText()  
+
+        # Получаем минимальный опыт, проверяем на пустоту  
+        min_experience_text = self.min_experience_input.text().strip()  
+        min_experience = int(min_experience_text) if min_experience_text else None  # Преобразуем в int или None  
+
+        # Проверка на заполнение всех полей  
+        if not title or not description or not requirements or not employer_id or not specialty or not status:  
+            QMessageBox.warning(self, "Ошибка", "Пожалуйста, заполните все поля!")  
+            return  
 
         is_editing = self.windowTitle() == "Изменить вакансию"  
         
@@ -603,18 +658,25 @@ class VacancyDialog(QDialog):
         cursor = connection.cursor()  
 
         if is_editing:  
-            # Используем self.vacancy_id, чтобы получить ID вакансии  
             cursor.execute("""  
-                UPDATE Вакансии SET название_должности = %s, описание = %s, требования = %s, специальность = %s, работодатель_id = %s, дата_открытия = %s, дата_закрытия = %s, статус = %s WHERE id = %s""",   
-                (title, description, requirements, specialty, employer_id, open_date, close_date, status, self.vacancy_id))  
+                UPDATE Вакансии   
+                SET название_должности = %s, описание = %s, требования = %s, специальность = %s,   
+                    работодатель_id = %s, статус = %s, минимальный_опыт = %s   
+                WHERE id = %s  
+            """,   
+            (title, description, requirements, specialty, employer_id, status, min_experience, self.vacancy_id))  
         else:  
-            cursor.execute("""INSERT INTO Вакансии (название_должности, описание, требования, специальность, работодатель_id, дата_открытия, дата_закрытия, статус) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",   
-                (title, description, requirements, specialty, employer_id, open_date, close_date, status))  
+            cursor.execute("""  
+                INSERT INTO Вакансии (название_должности, описание, требования, специальность,   
+                    работодатель_id, статус, минимальный_опыт)   
+                VALUES (%s, %s, %s, %s, %s, %s, %s)  
+            """,  
+            (title, description, requirements, specialty, employer_id, status, min_experience))  
 
         connection.commit()  
         cursor.close()  
         connection.close()  
-        self.accept() 
+        self.accept()
 
 class CandidateVacancyTab(QWidget):  
     def __init__(self, parent):  
@@ -627,98 +689,139 @@ class CandidateVacancyTab(QWidget):
         self.layout.addWidget(self.specialty_combo)  
 
         self.table = QTableWidget(self)  
-        self.table.setColumnCount(4)  # Увеличиваем на 1 для ID  
+        self.table.setColumnCount(3)  # Увеличиваем на 1 для ID  
         self.table.setHorizontalHeaderLabels([  
-            "ID", "Кандидат ID", "Вакансия ID", "Работодатель ID"  
+            "ID", "Кандидат ID", "Вакансия ID"  
         ])  
 
         self.layout.addWidget(self.table)  
         self.load_data()  
 
         # Скрываем столбец ID  
-        self.table.hideColumn(0)  # Скрываем первый столбец (ID)  
+        self.table.hideColumn(0)  
+
+        # Запрещаем редактирование ячеек таблицы  
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)  
+
+        self.add_button = QPushButton("Добавить")  
+        self.add_button.clicked.connect(self.add_candidate_vacancy)  
+        self.layout.addWidget(self.add_button)  
+
+        self.edit_button = QPushButton("Изменить")  
+        self.edit_button.clicked.connect(self.edit_candidate_vacancy)  
+        self.layout.addWidget(self.edit_button)  
 
         self.delete_button = QPushButton("Удалить")  
         self.delete_button.clicked.connect(self.delete_candidate_vacancy)  
         self.layout.addWidget(self.delete_button)   
 
-    def load_specialties(self):  
-        connection = psycopg2.connect(  
+    def create_connection(self):  
+        """Создание соединения с базой данных."""  
+        return psycopg2.connect(  
             dbname='postgres',  
             user='postgres',  
             password='1234',  
             host='localhost',  
             port='5432'  
         )  
+
+    def load_specialties(self):  
+        connection = self.create_connection()  
         cursor = connection.cursor()  
         
-        # Получаем уникальные специальности из таблиц Кандидаты и Вакансии  
-        cursor.execute("SELECT DISTINCT специальность FROM Кандидаты WHERE специальность IS NOT NULL")  
+        cursor.execute("""  
+            SELECT DISTINCT специальность   
+            FROM (  
+                SELECT специальность FROM Кандидаты WHERE специальность IS NOT NULL  
+                UNION  
+                SELECT специальность FROM Вакансии WHERE специальность IS NOT NULL  
+            ) AS combined_specialties  
+        """)  
         specialties = cursor.fetchall()  
         
         for specialty in specialties:  
-            self.specialty_combo.addItem(specialty[0])  # Добавляем специальности в комбобокс  
-
-        cursor.execute("SELECT DISTINCT специальность FROM Вакансии WHERE специальность IS NOT NULL")  
-        specialties = cursor.fetchall()  
-        
-        for specialty in specialties:  
-            if specialty[0] not in [self.specialty_combo.itemText(i) for i in range(self.specialty_combo.count())]:  
-                self.specialty_combo.addItem(specialty[0])  # Добавляем уникальные специальности  
+            self.specialty_combo.addItem(specialty[0])  
 
         cursor.close()  
         connection.close()  
 
     def load_data(self):  
-        connection = psycopg2.connect(  
-            dbname='postgres',  
-            user='postgres',  
-            password='1234',  
-            host='localhost',  
-            port='5432'  
-        )  
+        connection = self.create_connection()  
+        cursor = connection.cursor()  
         
         try:  
-            cursor = connection.cursor()  
-
-            # Получаем выбранную специальность  
-            selected_specialty = self.specialty_combo.currentText()  
-
-            # Выполнение SQL-запросов  
-            insert_query = """  
-            INSERT INTO Претендент_на_вакансию (кандидат_id, работодатель_id, вакансия_id, Дата_создания)  
-            SELECT   
-                c.id AS кандидат_id,   
-                v.работодатель_id,   
-                v.id AS вакансия_id,   
-                NOW() AS дата_создания  
-            FROM   
-                Кандидаты c  
-            JOIN   
-                Вакансии v ON v.статус = 'открыта'  
-            WHERE   
-                c.статус = 'Активный' AND c.специальность = %s AND v.специальность = %s;  
-            """  
-
-            # Выполнение запросов  
-            cursor.execute(insert_query, (selected_specialty, selected_specialty))  
-            connection.commit()  
-
-            # Загрузка данных в таблицу  
-            cursor.execute("SELECT id, кандидат_id, вакансия_id, работодатель_id FROM Претендент_на_вакансию ORDER BY id ASC")  
+            cursor.execute("SELECT id, кандидат_id, вакансия_id FROM Претендент_на_вакансию ORDER BY id ASC")  
             rows = cursor.fetchall()  
 
-            self.table.setRowCount(len(rows))  
-            for i, row in enumerate(rows):  
-                for j in range(len(row)):  
-                    self.table.setItem(i, j, QTableWidgetItem(str(row[j])))  
+            self.populate_table(rows)  
 
         except Exception as e:  
             QMessageBox.critical(self, "Ошибка", f"Произошла ошибка при загрузке данных: {str(e)}")  
-            connection.rollback()  # Откат изменений в случае ошибки  
         finally:  
             cursor.close()  
             connection.close()    
+
+    def populate_table(self, rows):  
+        """Заполнение таблицы данными."""  
+        self.table.setRowCount(len(rows))  
+        for i, row in enumerate(rows):  
+            for j in range(len(row)):  
+                self.table.setItem(i, j, QTableWidgetItem(str(row[j])))  
+
+    def add_candidate_vacancy(self):  
+        dialog = CandidateVacancyDialog(self)  
+        if dialog.exec_() == QDialog.Accepted:  
+            data = dialog.get_data()  
+            self.insert_into_db(data)  
+            self.load_data()  
+
+    def insert_into_db(self, data):  
+        connection = self.create_connection()  
+        cursor = connection.cursor()  
+        try:  
+            insert_query = """  
+            INSERT INTO Претендент_на_вакансию (кандидат_id, вакансия_id)   
+            VALUES (%s, %s)  
+            """  
+            cursor.execute(insert_query, data)  
+            connection.commit()  
+        except Exception as e:  
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при добавлении: {str(e)}")  
+            connection.rollback()  
+        finally:  
+            cursor.close()  
+            connection.close()  
+
+    def edit_candidate_vacancy(self):  
+        selected_row = self.table.currentRow()  
+        if selected_row < 0:  
+            QMessageBox.warning(self, "Ошибка", "Пожалуйста, выберите запись для изменения.")  
+            return  
+
+        id_value = self.table.item(selected_row, 0).text()  
+        dialog = CandidateVacancyDialog(self, id_value)  
+        if dialog.exec_() == QDialog.Accepted:  
+            data = dialog.get_data()  
+            self.update_db(id_value, data)  
+            self.load_data()  
+
+    def update_db(self, id_value, data):  
+        connection = self.create_connection()  
+        cursor = connection.cursor()  
+        try:  
+            update_query = """  
+            UPDATE Претендент_на_вакансию   
+            SET кандидат_id = %s   
+            WHERE id = %s  
+            """  
+            cursor.execute(update_query, (*data, id_value))  
+            connection.commit()  
+        except Exception as e:  
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при обновлении: {str(e)}")  
+            connection.rollback()  
+        finally:  
+            cursor.close()  
+            connection.close()  
 
     def delete_candidate_vacancy(self):  
         selected_row = self.table.currentRow()  
@@ -729,22 +832,220 @@ class CandidateVacancyTab(QWidget):
         confirmed = QMessageBox.question(self, "Подтверждение", "Вы уверены, что хотите удалить этого претендента?", QMessageBox.Yes | QMessageBox.No)  
         if confirmed == QMessageBox.Yes:  
             candidate_vacancy_id = self.table.item(selected_row, 0).text()  
-            self.delete_from_db("Претендент_на_вакансию", candidate_vacancy_id)  
+            self.delete_from_db(candidate_vacancy_id)  
             self.load_data()  
 
-    def delete_from_db(self, table_name, candidate_vacancy_id):  
-        connection = psycopg2.connect(  
+    def delete_from_db(self, candidate_vacancy_id):  
+        connection = self.create_connection()  
+        cursor = connection.cursor()  
+        try:  
+            # Получаем id кандидата и вакансии перед удалением  
+            cursor.execute("SELECT кандидат_id, вакансия_id FROM Претендент_на_вакансию WHERE id = %s", (candidate_vacancy_id,))  
+            candidate_vacancy = cursor.fetchone()  
+            if candidate_vacancy:  
+                candidate_id, vacancy_id = candidate_vacancy  
+
+                # Обновляем статус кандидата на "Активный"  
+                cursor.execute("UPDATE Кандидаты SET статус = 'Активный' WHERE id = %s", (candidate_id,))  
+                
+                # Обновляем статус вакансии на "Открыта"  
+                cursor.execute("UPDATE Вакансии SET статус = 'Открыта' WHERE id = %s", (vacancy_id,))  
+
+                # Удаляем запись из таблицы  
+                cursor.execute("DELETE FROM Претендент_на_вакансию WHERE id = %s", (candidate_vacancy_id,))  
+                
+                connection.commit()  
+            else:  
+                QMessageBox.warning(self, "Ошибка", "Запись не найдена.")  
+
+        except Exception as e:  
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при удалении: {str(e)}")  
+            connection.rollback()  
+        finally:  
+            cursor.close()  
+            connection.close()
+
+    def insert_into_db(self, data):  
+        connection = self.create_connection()  
+        cursor = connection.cursor()  
+        try:  
+            # Проверка на существование дублирующих записей  
+            check_query = """  
+                SELECT COUNT(*) FROM Претендент_на_вакансию   
+                WHERE кандидат_id = %s AND вакансия_id = %s  
+            """  
+            cursor.execute(check_query, data)  
+            count = cursor.fetchone()[0]  
+            
+            if count > 0: 
+                return  # Прекращаем выполнение, если запись уже существует  
+
+            # Вставка новой записи  
+            insert_query = """  
+            INSERT INTO Претендент_на_вакансию (кандидат_id, вакансия_id)   
+            VALUES (%s, %s)  
+            """  
+            cursor.execute(insert_query, data)  
+            connection.commit()  
+        except Exception as e:  
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при добавлении: {str(e)}")  
+            connection.rollback()  
+        finally:  
+            cursor.close()  
+            connection.close()       
+
+class CandidateVacancyDialog(QDialog):  
+    def __init__(self, parent, id_value=None):  
+        super().__init__(parent)  
+        self.id_value = id_value  
+        self.setWindowTitle("Добавить Претендента на Вакансию")  
+        self.layout = QFormLayout(self)  
+
+        # Комбобокс для выбора вакансии  
+        self.vacancy_combo = QComboBox(self)  
+        self.vacancy_combo.setEditable(False)  # Запрет ввода данных
+        self.vacancy_combo.addItem(None)
+        self.load_vacancies()  
+        self.vacancy_combo.currentIndexChanged.connect(self.load_candidates)  
+        self.layout.addRow("Выберите вакансию:", self.vacancy_combo)  
+
+        # Комбобокс для выбора кандидата  
+        self.candidate_combo = QComboBox(self)  
+        self.candidate_combo.setEditable(False)  # Запрет ввода данных  
+        self.layout.addRow("Выберите кандидата:", self.candidate_combo)  
+
+        self.save_button = QPushButton("Сохранить", self)  
+        self.save_button.clicked.connect(self.save)  
+        self.layout.addWidget(self.save_button)  
+
+        self.setLayout(self.layout)  
+
+    def load_vacancies(self):  
+        """Загрузка вакансий со статусом 'Открыта' в комбобокс."""  
+        connection = self.create_connection()  
+        cursor = connection.cursor()  
+        
+        cursor.execute("""  
+            SELECT id, название_должности, требования, специальность, минимальный_опыт   
+            FROM Вакансии   
+            WHERE статус = 'Открыта'  
+        """)  
+        vacancies = cursor.fetchall()  
+
+        if not vacancies:  
+            self.vacancy_combo.addItem("Нет доступных вакансий", None)  # Уведомление о недоступности вакансий  
+        else:  
+            for vacancy in vacancies:  
+                display_text = f"{vacancy[0]} - {vacancy[1]}, {vacancy[2]}, {vacancy[3]}"  
+                self.vacancy_combo.addItem(display_text, vacancy[0])  # Сохраняем ID вакансии как пользовательские данные  
+
+        cursor.close()  
+        connection.close()  
+
+    def load_candidates(self):  
+        """Загрузка кандидатов на основе выбранной вакансии."""  
+        self.candidate_combo.clear()  # Очищаем предыдущие данные  
+        vacancy_id = self.vacancy_combo.currentData()  # Получаем ID выбранной вакансии  
+
+        if vacancy_id is None:  
+            return  # Если вакансия не выбрана, выходим  
+
+        connection = self.create_connection()  
+        cursor = connection.cursor()  
+
+        # Получаем минимальный опыт и специальность вакансии  
+        cursor.execute("SELECT минимальный_опыт, специальность FROM Вакансии WHERE id = %s", (vacancy_id,))  
+        vacancy_data = cursor.fetchone()  
+
+        if vacancy_data:  
+            min_experience, specialty = vacancy_data  
+            cursor.execute("""  
+                SELECT id, фио, опыт_работы   
+                FROM Кандидаты   
+                WHERE статус = 'Активный' AND опыт_работы >= %s AND специальность = %s  
+            """, (min_experience, specialty))  
+            candidates = cursor.fetchall()  
+
+            if not candidates:  
+                self.candidate_combo.addItem("Нет доступных кандидатов", None)  # Уведомление о недоступности кандидатов  
+            else:  
+                for candidate in candidates:  
+                    self.candidate_combo.addItem(f"{candidate[0]} - {candidate[1]} (Опыт: {candidate[2]})", candidate[0])  
+
+        else:  
+            self.candidate_combo.addItem("Нет информации о вакансии", None)  # Уведомление о недоступной вакансии  
+
+        cursor.close()  
+        connection.close()  
+
+    def save(self):  
+        """Сохранение записи о кандидате на вакансию и обновление статусов."""  
+        vacancy_id = self.vacancy_combo.currentData()  
+        candidate_id = self.candidate_combo.currentData()  
+
+        if vacancy_id is None or candidate_id is None:  
+            QMessageBox.warning(self, "Ошибка", "Пожалуйста, выберите вакансию и кандидата!")  
+            return  
+
+        connection = self.create_connection()  
+        cursor = connection.cursor()  
+
+        try:  
+            # Проверка на существование дублирующей записи  
+            cursor.execute("""  
+                SELECT COUNT(*) FROM Претендент_на_вакансию   
+                WHERE кандидат_id = %s AND вакансия_id = %s  
+            """, (candidate_id, vacancy_id))  
+            count = cursor.fetchone()[0]  
+            
+            if count > 0:  
+                QMessageBox.warning(self, "Ошибка", "Эта запись уже существует.")  
+                return  # Прекращаем выполнение, если запись уже существует  
+
+            # Добавление записи о кандидате на вакансию  
+            cursor.execute("""  
+                INSERT INTO Претендент_на_вакансию (кандидат_id, вакансия_id)   
+                VALUES (%s, %s)  
+            """, (candidate_id, vacancy_id))  
+
+            # Обновление статуса вакансии на "Закрыта"  
+            cursor.execute("""  
+                UPDATE Вакансии   
+                SET статус = 'Закрыта'   
+                WHERE id = %s  
+            """, (vacancy_id,))  
+
+            # Обновление статуса кандидата на "Архивированный"  
+            cursor.execute("""  
+                UPDATE Кандидаты   
+                SET статус = 'Архивированный'   
+                WHERE id = %s  
+            """, (candidate_id,))  
+
+            connection.commit()  
+            QMessageBox.information(self, "Успех", "Запись успешно добавлена!")  
+            self.accept()  # Закрываем диалог  
+
+        except Exception as e:  
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при добавлении: {str(e)}")  
+            connection.rollback()  
+        finally:  
+            cursor.close()  
+            connection.close()  
+
+    def get_data(self):  
+        """Возвращает данные о кандидате и вакансии."""  
+        vacancy_id = self.vacancy_combo.currentData()  
+        candidate_id = self.candidate_combo.currentData()  
+        return (candidate_id, vacancy_id)  
+
+    def create_connection(self):  
+        """Создание соединения с базой данных."""  
+        return psycopg2.connect(  
             dbname='postgres',  
             user='postgres',  
-            password='1234',  
-            host='localhost',  
-            port='5432'  
-        )  
-        cursor = connection.cursor()  
-        cursor.execute(f"DELETE FROM {table_name} WHERE id = %s", (candidate_vacancy_id,))  
-        connection.commit()  
-        cursor.close()  
-        connection.close() 
+            password='1234'  
+        )
 
 if __name__ == "__main__":  
     app = QApplication(sys.argv)  
