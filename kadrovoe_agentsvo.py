@@ -8,13 +8,15 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QTableWidget, QAbstractItemVi
 from PyQt5.QtGui import QIntValidator, QRegularExpressionValidator 
 from PyQt5.QtCore import QRegularExpression, QDate, Qt
 import psycopg2
+from docx import Document
+from datetime import datetime 
     
 
 class MainApp(QMainWindow):  
     def __init__(self):  
         super().__init__()  
         self.setWindowTitle("HR App")  
-        self.setGeometry(100, 100, 800, 600)  
+        self.setGeometry(0, 0, 1900, 1060)  
 
         self.central_widget = QWidget(self)  
         self.setCentralWidget(self.central_widget)  
@@ -29,19 +31,22 @@ class MainApp(QMainWindow):
         self.candidates_tab = CandidateTab(self)  
         self.employers_tab = EmployerTab(self)  
         self.vacancies_tab = VacancyTab(self)  
-        self.candidate_vacancy_tab = CandidateVacancyTab(self)  
+        self.candidate_vacancy_tab = CandidateVacancyTab(self)
+        self.report_tab = ReportTab(self)
         '''
         Талица Кандидаты
         Таблица Работодатели
         Таблица Вакансии
         Таблица Предентент_навакансию
+        Вкладка отчеты
         '''
 
         # Add tabs to the interface  
         self.tabs.addTab(self.candidates_tab, "Кандидаты")  
         self.tabs.addTab(self.employers_tab, "Работодатели")  
         self.tabs.addTab(self.vacancies_tab, "Вакансии")  
-        self.tabs.addTab(self.candidate_vacancy_tab, "Претенденты на вакансии")  # Добавляем новый таб  
+        self.tabs.addTab(self.candidate_vacancy_tab, "Претенденты на вакансии")
+        self.tabs.addTab(self.report_tab, "Отчеты")   
 
         self.setMinimumSize(800, 600)
 
@@ -61,7 +66,8 @@ class CandidateTab(QWidget):
         self.load_data()  
 
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)  
-
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        
         # Скрываем столбец ID  
         self.table.hideColumn(0)  
 
@@ -160,7 +166,7 @@ class CandidateTab(QWidget):
             return  
 
         # Получаем путь к резюме  
-        resume_path = self.table.item(selected_row, 5).text()  # Предполагается, что путь к резюме в 6-м столбце (индекс 5)  
+        resume_path = self.table.item(selected_row, 5).text()  
         
         if not os.path.exists(resume_path):  
             QMessageBox.warning(self, "Ошибка", "Файл резюме по указанному пути не найден. Измените путь или проверьте наличие файла.")  
@@ -188,15 +194,15 @@ class CandidateDialog(QDialog):
 
         self.resume_input = QLineEdit(self)  
         self.resume_button = QPushButton("Выбрать резюме", self)  
-        self.resume_button.clicked.connect(self.select_resume)  # Подключаем кнопку к методу выбора файла  
+        self.resume_button.clicked.connect(self.select_resume)  # ВЫбор файла (кнопка)  
         
         # Устанавливаем валидатор для опыта работы (только цифры)  
         self.experience_input = QLineEdit(self)  
-        self.experience_input.setValidator(QIntValidator(0, 100, self))  # Допускаем ввод только положительных чисел  
+        self.experience_input.setValidator(QIntValidator(0, 100, self))  # Ввод положительных чисел  
 
         self.education_input = QComboBox(self)  
         self.education_input.addItems(["Высшее", "СПО"])  # Выпадающий список для образования  
-        self.specialization_input = QLineEdit(self)  # Изменено на specialization_input для ясности  
+        self.specialization_input = QLineEdit(self)  
         self.skills_input = QLineEdit(self)  
         self.status_input = QComboBox(self)  
         self.status_input.addItems(["Активный", "Архивированный"])  # Выпадающий список для статуса  
@@ -220,7 +226,7 @@ class CandidateDialog(QDialog):
         self.layout.addRow("Телефон:", self.phone_input)  
         self.layout.addRow("Email:", self.email_input)  
         self.layout.addRow("Резюме:", self.resume_input)  
-        self.layout.addWidget(self.resume_button)  # Добавляем кнопку выбора резюме под полем  
+        self.layout.addWidget(self.resume_button)
         self.layout.addRow("Опыт работы:", self.experience_input)  
         self.layout.addRow("Образование:", self.education_input)  
         self.layout.addRow("Специальность:", self.specialization_input)  
@@ -236,7 +242,7 @@ class CandidateDialog(QDialog):
     def select_resume(self):  
         options = QFileDialog.Options()  
         options |= QFileDialog.ReadOnly  
-        file_name, _ = QFileDialog.getOpenFileName(self, "Выберите резюме", "", "PDF Files (*.pdf);;All Files (*)", options=options)  
+        file_name, _ = QFileDialog.getOpenFileName(self, "Выберите резюме", "", "PDF Files (*.pdf)", options=options)  
         if file_name:  
             self.resume_input.setText(file_name)  # Устанавливаем путь к выбранному резюме в поле ввода  
 
@@ -312,6 +318,7 @@ class EmployerTab(QWidget):
         self.load_data()  
 
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
 
         self.add_button = QPushButton("Добавить")  
         self.add_button.clicked.connect(self.add_employer)  
@@ -334,7 +341,7 @@ class EmployerTab(QWidget):
             port='5432'  
         )  
         cursor = connection.cursor()  
-        cursor.execute("SELECT id, название, контактные_данные, описание FROM Работодатели ORDER BY id ASC")  # Сортировка по id  
+        cursor.execute("SELECT id, название, контактные_данные, описание FROM Работодатели ORDER BY id ASC")  
         rows = cursor.fetchall()  
 
         self.table.setRowCount(len(rows))  
@@ -359,7 +366,7 @@ class EmployerTab(QWidget):
         if selected_row < 0:  
             QMessageBox.warning(self, "Ошибка", "Пожалуйста, выберите работодателя для изменения.")  
             return  
-        current_data = [self.table.item(selected_row, i).text() for i in range(4)]  # Получаем данные включая ID  
+        current_data = [self.table.item(selected_row, i).text() for i in range(4)]  
         dialog = EmployerDialog(self, "Изменить работодателя", current_data)  
         if dialog.exec_() == QDialog.Accepted:  
             self.load_data()  
@@ -396,8 +403,8 @@ class EmployerDialog(QDialog):
         self.setWindowTitle(title)  
         self.layout = QFormLayout(self)  
 
-        self.id_input = QLineEdit(self)  # Поле для id, которое будет скрыто  
-        self.id_input.setVisible(False)  # Скрываем поле id  
+        self.id_input = QLineEdit(self)    
+        self.id_input.setVisible(False)    
 
         self.name_input = QLineEdit(self)  
         self.contact_input = QLineEdit(self)  
@@ -409,12 +416,12 @@ class EmployerDialog(QDialog):
         self.contact_input.setValidator(self.email_validator)  
 
         if employer_data:  
-            self.id_input.setText(employer_data[0])  # Устанавливаем id  
+            self.id_input.setText(employer_data[0])   
             self.name_input.setText(employer_data[1])  
             self.contact_input.setText(employer_data[2])  
             self.description_input.setText(employer_data[3])  
         
-        self.layout.addRow("ID:", self.id_input)  # Добавляем id (но скрываем)  
+        self.layout.addRow("ID:", self.id_input)   
         self.layout.addRow("Название:", self.name_input)  
         self.layout.addRow("Контактные данные:", self.contact_input)  
         self.layout.addRow("Описание:", self.description_input)  
@@ -426,7 +433,7 @@ class EmployerDialog(QDialog):
         self.setLayout(self.layout)  
 
     def save(self):  
-        employer_id = self.id_input.text()  # Получаем id из скрытого поля  
+        employer_id = self.id_input.text()    
         name = self.name_input.text()  
         contact = self.contact_input.text()  
         description = self.description_input.text()  
@@ -436,7 +443,7 @@ class EmployerDialog(QDialog):
             QMessageBox.warning(self, "Ошибка", "Пожалуйста, заполните все обязательные поля.")  
             return  
         
-        # Проверка на валидность email  
+        # Проверка на маску email  
         if not self.contact_input.hasAcceptableInput():  
             QMessageBox.warning(self, "Ошибка", "Пожалуйста, введите корректный Email в формате xxxxxx@xxxxx.ru/com.")  
             return  
@@ -475,19 +482,19 @@ class VacancyTab(QWidget):
         self.layout = QVBoxLayout(self)  
 
         self.table = QTableWidget(self)  
-        self.table.setColumnCount(8)  # Увеличиваем на 1 для специальности  
+        self.table.setColumnCount(8)  
         self.table.setHorizontalHeaderLabels([  
             "ID", "Название должности", "Описание", "Требования", "Работодатель ID", "Специальность", "Минимальный опыт работы", "Статус"  
         ])  
 
         self.layout.addWidget(self.table)  
         self.load_data()  
-
-        # Скрываем столбец ID  
-        self.table.hideColumn(0)  # Скрываем первый столбец (ID)  
+  
+        self.table.hideColumn(0)  
 
         # Устанавливаем режим выбора строк  
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)  
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
 
         # Кнопки для управления  
         self.add_button = QPushButton("Добавить")  
@@ -535,8 +542,8 @@ class VacancyTab(QWidget):
             QMessageBox.warning(self, "Ошибка", "Пожалуйста, выберите вакансию для изменения.")  
             return  
         
-        vacancy_id = self.table.item(selected_row, 0).text()  # Получаем ID для редактирования  
-        current_data = [self.table.item(selected_row, i).text() for i in range(1, 8)]  # Получаем данные без ID  
+        vacancy_id = self.table.item(selected_row, 0).text()  
+        current_data = [self.table.item(selected_row, i).text() for i in range(1, 8)]    
         dialog = VacancyDialog(self, "Изменить вакансию", current_data, vacancy_id)  
         if dialog.exec_() == QDialog.Accepted:  
             self.load_data()  
@@ -549,7 +556,7 @@ class VacancyTab(QWidget):
 
         confirmed = QMessageBox.question(self, "Подтверждение", "Вы уверены, что хотите удалить эту вакансию?", QMessageBox.Yes | QMessageBox.No)  
         if confirmed == QMessageBox.Yes:  
-            vacancy_id = self.table.item(selected_row, 0).text()  # Получаем ID для удаления  
+            vacancy_id = self.table.item(selected_row, 0).text()   
             self.delete_from_db("Вакансии", vacancy_id)  
             self.load_data()  
 
@@ -573,7 +580,7 @@ class VacancyDialog(QDialog):
         self.setWindowTitle(title)  
         self.layout = QFormLayout(self)  
 
-        self.vacancy_id = vacancy_id  # Сохраняем vacancy_id как атрибут класса  
+        self.vacancy_id = vacancy_id  
 
         self.title_input = QLineEdit(self)  
         self.description_input = QLineEdit(self)  
@@ -581,8 +588,7 @@ class VacancyDialog(QDialog):
         self.employer_id_input = QComboBox(self)  
         self.specialty_input = QLineEdit(self)
         self.min_experience_input = QLineEdit(self)    
-        self.status_input = QComboBox(self)  
-  # Новое поле для минимального опыта работы  
+        self.status_input = QComboBox(self)    
 
         self.status_input.addItems(["Открыта", "Закрыта"])  
 
@@ -682,14 +688,13 @@ class CandidateVacancyTab(QWidget):
     def __init__(self, parent):  
         super().__init__(parent)  
         self.layout = QVBoxLayout(self)  
-
-        # Добавление поля для выбора специальности  
+ 
         self.specialty_combo = QComboBox(self)  
         self.load_specialties()  # Загружаем специальности в комбобокс  
         self.layout.addWidget(self.specialty_combo)  
 
         self.table = QTableWidget(self)  
-        self.table.setColumnCount(3)  # Увеличиваем на 1 для ID  
+        self.table.setColumnCount(3) 
         self.table.setHorizontalHeaderLabels([  
             "ID", "Кандидат ID", "Вакансия ID"  
         ])  
@@ -780,8 +785,8 @@ class CandidateVacancyTab(QWidget):
         cursor = connection.cursor()  
         try:  
             insert_query = """  
-            INSERT INTO Претендент_на_вакансию (кандидат_id, вакансия_id)   
-            VALUES (%s, %s)  
+            INSERT INTO Претендент_на_вакансию (кандидат_id, вакансия_id, Дата_создания)   
+            VALUES (%s, %s, NOW())  
             """  
             cursor.execute(insert_query, data)  
             connection.commit()  
@@ -882,8 +887,8 @@ class CandidateVacancyTab(QWidget):
 
             # Вставка новой записи  
             insert_query = """  
-            INSERT INTO Претендент_на_вакансию (кандидат_id, вакансия_id)   
-            VALUES (%s, %s)  
+            INSERT INTO Претендент_на_вакансию (кандидат_id, вакансия_id, Дата_создания)   
+            VALUES (%s, %s, NOW())  
             """  
             cursor.execute(insert_query, data)  
             connection.commit()  
@@ -1004,8 +1009,8 @@ class CandidateVacancyDialog(QDialog):
 
             # Добавление записи о кандидате на вакансию  
             cursor.execute("""  
-                INSERT INTO Претендент_на_вакансию (кандидат_id, вакансия_id)   
-                VALUES (%s, %s)  
+                INSERT INTO Претендент_на_вакансию (кандидат_id, вакансия_id, Дата_создания)   
+                VALUES (%s, %s, NOW())  
             """, (candidate_id, vacancy_id))  
 
             # Обновление статуса вакансии на "Закрыта"  
@@ -1046,6 +1051,167 @@ class CandidateVacancyDialog(QDialog):
             user='postgres',  
             password='1234'  
         )
+
+class ReportTab(QWidget):  
+    def __init__(self, parent):  
+        super().__init__(parent)  
+        self.layout = QVBoxLayout(self)  
+
+        self.create_report_button = QPushButton("Создать новый отчет", self)  
+        self.create_report_button.clicked.connect(self.open_report_dialog)  
+        self.layout.addWidget(self.create_report_button)  
+
+        self.open_reports_folder_button = QPushButton("Открыть папку с отчетами", self)  
+        self.open_reports_folder_button.clicked.connect(self.open_reports_folder)  
+        self.layout.addWidget(self.open_reports_folder_button)  
+
+    def open_report_dialog(self):  
+        dialog = ReportDialog(self)  
+        dialog.exec_()  # Открываем диалог как модальное окно  
+
+    def open_reports_folder(self):  
+        reports_folder = r"C:\Users\Vo1\Downloads\Отчеты"  # Убедитесь, что путь верный  
+        if os.path.exists(reports_folder):  
+            webbrowser.open(reports_folder)  # Открываем проводник к папке  
+        else:  
+            QMessageBox.critical(self, "Ошибка", "Папка отчетов не найдена.")
+
+class ReportDialog(QDialog):  
+    def __init__(self, parent=None):  
+        super().__init__(parent)  
+        self.setWindowTitle("Создание отчета")  
+        self.setFixedSize(400, 300)  
+
+        self.layout = QFormLayout(self)  
+
+        # Выбор таблицы  
+        self.table_combo = QComboBox(self)  
+        self.table_combo.addItems(["Кандидаты", "Работодатели", "Вакансии", "Претенденты на вакансии"])  
+        self.table_combo.currentIndexChanged.connect(self.update_status_combo)  # Обновляем статусы при изменении таблицы  
+        self.layout.addRow("Выберите таблицу:", self.table_combo)  
+
+        # Выбор статуса  
+        self.status_combo = QComboBox(self)  
+        self.update_status_combo()  # Инициализируем статусы  
+        self.layout.addRow("Статус:", self.status_combo)  
+
+        # Выбор начальной и конечной даты  
+        self.start_date_edit = QDateEdit(self)  
+        self.start_date_edit.setCalendarPopup(True)  
+        self.start_date_edit.setDate(QDate.currentDate())  
+        self.layout.addRow("Начальная дата:", self.start_date_edit)  
+
+        self.end_date_edit = QDateEdit(self)  
+        self.end_date_edit.setCalendarPopup(True)  
+        self.end_date_edit.setDate(QDate.currentDate())  
+        self.layout.addRow("Конечная дата:", self.end_date_edit)  
+
+        # Кнопки  
+        self.generate_button = QPushButton("Сгенерировать отчет", self)  
+        self.generate_button.clicked.connect(self.generate_report)  
+        self.layout.addRow(self.generate_button)  
+
+        self.cancel_button = QPushButton("Отмена", self)  
+        self.cancel_button.clicked.connect(self.reject)  
+        self.layout.addRow(self.cancel_button)  
+
+        self.setLayout(self.layout)  
+
+    def update_status_combo(self):  
+        table_name = self.table_combo.currentText()  
+
+        # Сброс статусов  
+        self.status_combo.clear()  
+
+        # Заполняем статус в зависимости от выбранной таблицы  
+        if table_name == "Кандидаты":  
+            self.status_combo.addItems(["Все", "Активный", "Архивированный"])  
+        elif table_name == "Работодатели":  
+            self.status_combo.addItems(["Все"])  
+        elif table_name == "Вакансии":  
+            self.status_combo.addItems(["Все", "Открыта", "Закрыта"])  
+        elif table_name == "Претенденты на вакансии":  
+            self.status_combo.addItems(["Все"])  
+
+    def generate_report(self):  
+        table_name = self.table_combo.currentText()  
+        start_date = self.start_date_edit.date().toString("yyyy-MM-dd")  
+        end_date = self.end_date_edit.date().toString("yyyy-MM-dd")  
+        status = self.status_combo.currentText()  
+        
+        try:  
+            conn = self.connect_to_db()  # Открываем соединение с БД  
+            query = self.create_query(table_name, start_date, end_date, status)  
+            records, headers = self.execute_query(conn, query)  
+            
+            # Сохраняем отчет с датами  
+            report_path = self.create_docx_report(table_name, records, headers, start_date, end_date)  
+
+            QMessageBox.information(self, "Успех", f'Отчет сгенерирован: {report_path}')  
+            self.accept()  # Закрываем диалог  
+        except Exception as e:  
+            QMessageBox.critical(self, "Ошибка", f'Ошибка: {str(e)}')  
+        finally:  
+            conn.close()  # Закрываем соединение  
+
+    def connect_to_db(self):  
+        return psycopg2.connect(  
+            dbname='postgres',  
+            user='postgres',  
+            password='1234',  
+            host='localhost',  
+            port='5432'  
+        )  
+
+    def create_query(self, table_name, start_date, end_date, status):  
+        query = f"SELECT * FROM {table_name} WHERE дата_создания BETWEEN '{start_date}' AND '{end_date}'"  
+        if table_name in ['Кандидаты', 'Вакансии'] and status != "Все":  
+            query += f" AND статус = '{status}'"  
+        return query  
+
+    def execute_query(self, conn, query):  
+        cursor = conn.cursor()  
+        cursor.execute(query)  
+        records = cursor.fetchall()  
+        column_names = [desc[0] for desc in cursor.description]  
+        cursor.close()  
+        return records, column_names  
+
+    def create_docx_report(self, table_name, records, headers, start_date, end_date):  
+        output_dir = r"C:\Users\Vo1\Downloads\Отчеты"  # Указываем путь для сохранения  
+        if not os.path.exists(output_dir):  
+            os.makedirs(output_dir)  
+
+        # Добавляем даты в название отчета  
+        report_path = os.path.join(output_dir, f'{table_name}_report_{start_date}_to_{end_date}.docx')  
+        
+        # Создаем документ  
+        doc = Document()  
+        doc.add_heading(f'Отчет по таблице {table_name} с {start_date} по {end_date}', level=1)  
+
+        # Форматируем каждую запись  
+        formatted_records = []  
+        for record in records:  
+            formatted_record = []  
+            for item in record:  
+                if isinstance(item, datetime):  # Проверяет, является ли элемент объектом datetime  
+                    formatted_item = item.strftime("%Y-%m-%d")  # Форматирует дату  
+                elif isinstance(item, str):  
+                    formatted_item = item  # Оставляет строку без изменений  
+                else:  
+                    formatted_item = str(item)  # Приводит другие типы к строке  
+                
+                formatted_record.append(formatted_item)  
+
+            formatted_records.append(formatted_record)  
+
+        if formatted_records:  # Проверяем, есть ли записи  
+            doc.add_paragraph(", ".join(headers))  # Добавляем заголовки в документ  
+            for record in formatted_records:  
+                doc.add_paragraph(", ".join(record))  # Записываем отформатированную запись  
+
+        doc.save(report_path)  # Сохраняем файл  
+        return report_path  
 
 if __name__ == "__main__":  
     app = QApplication(sys.argv)  
